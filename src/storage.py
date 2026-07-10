@@ -224,3 +224,31 @@ def delete_params(name: str, token: str = "") -> dict:
     if code == 200:
         return {"ok": True, "name": name}
     return {"ok": False, "error": resp.get("message", f"HTTP {code}")}
+
+
+def trigger_telegram_workflow(message: str, chat_id: str = "", token: str = "") -> dict:
+    """
+    透過 GitHub repository_dispatch 觸發 telegram-notify workflow
+    因為 sandbox 被牆無法直連 api.telegram.org
+    """
+    if not token:
+        token = _get_token()
+    if not token:
+        return {"ok": False, "error": "GITHUB_PAT 未設定"}
+
+    body = {
+        "event_type": "telegram-notify",
+        "client_payload": {
+            "message": message,
+            "chat_id": chat_id,
+        }
+    }
+    code, resp = _api(
+        f"/repos/{REPO}/dispatches",
+        method="POST",
+        token=token,
+        body=body,
+    )
+    if code == 204:
+        return {"ok": True, "msg": "Workflow 觸發成功, Telegram 推送在 5-10 秒後抵達"}
+    return {"ok": False, "error": f"HTTP {code}: {resp.get('message', 'unknown')}"}

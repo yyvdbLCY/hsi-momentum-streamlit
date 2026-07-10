@@ -1,0 +1,62 @@
+name: Telegram Notify
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: "Telegram 訊息內容"
+        required: true
+        type: string
+      chat_id:
+        description: "Telegram Chat ID (留空用 secret 預設)"
+        required: false
+        type: string
+        default: ""
+  repository_dispatch:
+    types: [telegram-notify]
+
+jobs:
+  send-telegram:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Send Telegram message
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          INPUT_CHAT_ID: ${{ inputs.chat_id }}
+          DISPATCH_CHAT_ID: ${{ github.event.client_payload.chat_id }}
+        run: |
+          # 1. 決定 chat_id (input > dispatch > secret)
+          CHAT_ID="${INPUT_CHAT_ID:-${DISPATCH_CHAT_ID:-${{ secrets.TELEGRAM_CHAT_ID }}}}"
+          if [ -z "$CHAT_ID" ]; then
+            echo "❌ 沒有 chat_id (input / dispatch / secret 全部空)"
+            exit 1
+          fi
+
+          # 2. 決定 message (workflow_dispatch 從 input, repository_dispatch 從 payload)
+          if [ -n "${{ inputs.message }}" ]; then
+            MSG='${{ inputs.message }}'
+          elif [ -n "${{ github.event.client_payload.message }}" ]; then
+            MSG='${{ github.event.client_payload.message }}'
+          else
+            echo "❌ 沒有 message"
+            exit 1
+          fi
+
+          # 3. 解析 multiline message (從 file 讀)
+          echo "$MSG" > /tmp/msg.txt
+          MSG_PAYLOAD=$(python3 -c "
+          import json, sys
+          with open('/tmp/msg.txt', 'r') as f:
+              msg = f.read()
+          print(json.dumps({'chat_id': '$CHAT_ID', 'text': msg, 'parse_mode': 'HTML', 'disable_web_page_preview': True}))
+          ")
+          echo "Payload: $MSG_PAYLOAD"
+
+          # 4. 推 Telegram
+          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "$MSG_PAYLOAD" \
+            -o /tmp/tg_resp.json -w "HTTP %{http_code}\n"
+          cat /tmp/tg_resp.json | head -c 500
+          echo ""

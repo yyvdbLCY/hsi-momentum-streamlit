@@ -698,3 +698,60 @@ def load_bars(filepath: str) -> list:
         close=b['close'],
         volume=b.get('volume', 0),
     ) for b in data]
+
+
+# ============== Latest Signal Check ==============
+
+def check_latest_signal(bars: list, params: BacktestParams) -> dict:
+    """
+    檢查最新一根 K 線的進場信號狀態
+    返回 dict:
+      - date, close, high, low
+      - donchian_high, adx, atr, trend_ma
+      - signal_buy (bool)
+      - 細部: fresh_breakout, reentry, trend_ok, adx_ok, atr_ok
+    """
+    n = len(bars)
+    if n < 2:
+        return {'signal_buy': False, 'date': bars[0].date if bars else None}
+
+    atr = calculate_atr(bars, params.atrPeriod)
+    donchian_high, _ = calculate_donchian(bars, params.donchianPeriod)
+    adx = calculate_adx(bars, params.adxPeriod)
+    trend_ma = calculate_sma(bars, params.trendPeriod) if params.useTrendFilter else [float('nan')] * n
+
+    i = n - 1
+    last = bars[i]
+    prev = bars[i - 1]
+
+    dc_h = donchian_high[i]
+    adx_v = adx[i]
+    atr_v = atr[i]
+    trend_v = trend_ma[i] if params.useTrendFilter else float('nan')
+
+    # 進場條件
+    fresh_breakout = dc_h is not None and prev.close <= dc_h and last.close > dc_h
+    reentry = params.allowReentry and dc_h is not None and last.close > dc_h and last.close > prev.close
+    trend_ok = (not params.useTrendFilter) or (not math.isnan(trend_v) and last.close > trend_v)
+    adx_ok = not math.isnan(adx_v) and adx_v >= params.adxThreshold
+    atr_ok = not math.isnan(atr_v) and atr_v > 0
+
+    signal_buy = (fresh_breakout or reentry) and trend_ok and adx_ok and atr_ok
+
+    return {
+        'date': last.date,
+        'open': last.open,
+        'high': last.high,
+        'low': last.low,
+        'close': last.close,
+        'donchian_high': dc_h,
+        'adx': adx_v,
+        'atr': atr_v,
+        'trend_ma': trend_v,
+        'fresh_breakout': fresh_breakout,
+        'reentry': reentry,
+        'trend_ok': trend_ok,
+        'adx_ok': adx_ok,
+        'atr_ok': atr_ok,
+        'signal_buy': signal_buy,
+    }

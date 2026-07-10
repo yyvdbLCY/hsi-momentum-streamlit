@@ -22,9 +22,9 @@ import time
 
 from backtest import (
     load_bars, run_backtest, optimize_parameters, score_metrics,
-    DEFAULT_PARAMS, BacktestParams, OHLCBar,
+    DEFAULT_PARAMS, BacktestParams, OHLCBar, check_latest_signal,
 )
-from storage import list_params, save_params, load_params, delete_params, MAX_FILES
+from storage import list_params, save_params, load_params, delete_params, trigger_telegram_workflow, MAX_FILES
 from dataclasses import asdict
 
 st.set_page_config(
@@ -73,9 +73,16 @@ if 'interval' not in st.session_state:
 if 'data_source' not in st.session_state:
     st.session_state.data_source = "yahoo"
 if 'telegram_token' not in st.session_state:
-    st.session_state.telegram_token = ""
+    try:
+        st.session_state.telegram_token = st.secrets.get("TELEGRAM_TOKEN", "")
+    except Exception:
+        st.session_state.telegram_token = ""
 if 'telegram_chat_id' not in st.session_state:
-    st.session_state.telegram_chat_id = ""
+    # 試試從 secrets 讀 (不推薦在 secrets 存 token, 只是 fallback)
+    try:
+        st.session_state.telegram_chat_id = st.secrets.get("TELEGRAM_CHAT_ID", "")
+    except Exception:
+        st.session_state.telegram_chat_id = ""
 
 # ============== Sidebar ==============
 
@@ -491,53 +498,135 @@ with tab_monitor:
     st.markdown("### 🤖 Telegram 設定")
     col_t1, col_t2 = st.columns(2)
     with col_t1:
-        tg_token = st.text_input("Bot Token", type="password", value=st.session_state.telegram_token)
+        tg_token = st.text_input("Bot Token", type="password", value=st.session_state.telegram_token, key="tg_token_input")
         st.session_state.telegram_token = tg_token
     with col_t2:
-        tg_chat = st.text_input("Chat ID", value=st.session_state.telegram_chat_id)
+        tg_chat = st.text_input("Chat ID", value=st.session_state.telegram_chat_id, key="tg_chat_input")
         st.session_state.telegram_chat_id = tg_chat
 
     st.divider()
-    st.markdown("### 🔍 單次信號檢查")
+    st.markdown("### 🔍 最新信號檢查")
 
-    if st.button("🔍 檢查最新信號", type="primary"):
-        with st.spinner("計算中..."):
-            params_obj = BacktestParams(**{k: v for k, v in st.session_state.params.items() if k in [f.name for f in BacktestParams.__dataclass_fields__.values()]})
-            result = run_backtest(bars, params_obj, bars_per_year)
-            last_trade = result.trades[-1] if result.trades else None
-            st.session_state.result = result
-        if last_trade:
-            st.success(f"✅ 最近信號: {last_trade.exitDate} {last_trade.exitReason} 進場價 {last_trade.entryPrice:.0f}")
+    # 構造 BacktestParams 對象 (只用 BacktestParams 有的 keys)
+    valid_param_keys = {f.name for f in BacktestParams.__dataclass_fields__.values()}
+    clean_params = {k: v for k, v in st.session_state.params.items() if k in valid_param_keys}
+    params_obj = BacktestParams(**clean_params)
+
+    if st.button("🔍 檢查最新信號", type="primary", use_container_width=True):
+        with st.spinner("計算最新 K 線信號中..."):
+            sig = check_latest_signal(bars, params_obj)
+            st.session_state.latest_signal = sig
+        st.success(f"✅ 完成")
+
+    # 顯示信號
+    if 'latest_signal' in st.session_state:
+        sig = st.session_state.latest_signal
+        st.markdown("#### 📊 當前信號狀態")
+
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.metric("📅 日期", sig['date'])
+        with c2:
+            st.metric("💰 HSI 收盤", f"{sig['close']:,.0f}")
+        with c3:
+            dc_h_str = f"{sig['donchian_high']:,.0f}" if sig['donchian_high'] is not None else "—"
+            st.metric("📐 Donchian High", dc_h_str)
+        with c4:
+            adx_str = f"{sig['adx']:.1f}" if not (isinstance(sig['adx'], float) and (sig['adx'] != sig['adx'])) else "—"
+            st.metric("📈 ADX", adx_str)
+
+        # 主信號
+        st.divider()
+        if sig['signal_buy']:
+            st.success("### 🟢 買入信號!")
+            entry_type = "Fresh Breakout" if sig['fresh_breakout'] else "Re-entry"
+            st.markdown(f"""
+**進場原因**: {entry_type}
+- ✅ Donchian 突破: {sig['close']:.0f} > {sig['donchian_high']:.0f}
+- ✅ ADX ≥ 閾值: {sig['adx']:.1f} ≥ {params_obj.adxThreshold}
+- ✅ 趨勢過濾: Close > MA{params_obj.trendPeriod}
+- ✅ ATR > 0: {sig['atr']:.1f}
+
+**建議倉位**:
+- 進場價: {sig['close']:,.0f}
+- 止損: {sig['close'] - sig['atr'] * params_obj.atrStopMult:,.0f} (-{params_obj.atrStopMult:.1f} ATR)
+- 止盈 (部分 50%): {sig['close'] + sig['atr'] * params_obj.atrProfitMult:,.0f} (+{params_obj.atrProfitMult:.1f} ATR)
+- 追蹤停損: {sig['close'] - sig['atr'] * params_obj.atrTrailMult:,.0f} (-{params_obj.atrTrailMult:.1f} ATR)
+            """)
         else:
-            st.info("目前無信號")
+            st.info("### ⚪ 觀望 (未觸發進場條件)")
+            st.markdown(f"""
+**進場條件檢查**:
+- {'✅' if sig['fresh_breakout'] or sig['reentry'] else '❌'} Donchian 突破: 收 {sig['close']:.0f} vs 高 {sig['donchian_high']:.0f} (差距 {sig['close'] - sig['donchian_high']:+.0f})
+- {'✅' if sig['adx_ok'] else '❌'} ADX ≥ 閾值: {sig['adx']:.1f} {'≥' if sig['adx_ok'] else '<'} {params_obj.adxThreshold}
+- {'✅' if sig['trend_ok'] else '❌'} 趨勢過濾: Close vs MA50
+- {'✅' if sig['atr_ok'] else '❌'} ATR > 0: {sig['atr']:.1f}
+            """)
 
-    st.divider()
-    st.markdown("### 📤 手動推送 Telegram")
-    if st.button("📤 推送最新結果到 Telegram", disabled=not st.session_state.telegram_token):
-        if st.session_state.result is None:
-            st.error("請先跑回測或檢查信號")
-        else:
-            m = st.session_state.result.metrics
-            msg = f"""📊 HSI 動量突破 (1:1 翻譯自 Next.js)
-勝率: {m.winRate*100:.1f}% (目標 ≥80%)
-年化: {m.annualReturn*100:+.2f}% (目標 ≥10%)
-MDD: {m.maxDrawdown*100:.2f}% (目標 ≤15%)
-交易: {m.totalTrades} (勝 {m.wins} / 敗 {m.losses})
-PF: {m.profitFactor:.2f if m.profitFactor < 100 else '∞'}
+        st.divider()
+        st.markdown("### 📤 推送 Telegram")
+        if st.button("📤 推送信號到 Telegram", type="primary", use_container_width=True, disabled=not tg_token):
+            # 組 Telegram 訊息
+            if sig['signal_buy']:
+                emoji = "🟢"
+                title = "買入信號"
+                conditions = (
+                    f"✅ Donchian 突破: {sig['close']:.0f} > {sig['donchian_high']:.0f}\n"
+                    f"✅ ADX {sig['adx']:.1f} ≥ {params_obj.adxThreshold}\n"
+                    f"✅ 趨勢過濾通過\n"
+                    f"✅ ATR {sig['atr']:.1f} > 0"
+                )
+                sl_price = sig['close'] - sig['atr'] * params_obj.atrStopMult
+                tp_price = sig['close'] + sig['atr'] * params_obj.atrProfitMult
+                trail_price = sig['close'] - sig['atr'] * params_obj.atrTrailMult
+                trade_plan = (
+                    f"\n\n💡 倉位計畫:\n"
+                    f"進場: {sig['close']:,.0f}\n"
+                    f"止損: {sl_price:,.0f} (-{params_obj.atrStopMult:.1f} ATR)\n"
+                    f"止盈 (50%): {tp_price:,.0f} (+{params_obj.atrProfitMult:.1f} ATR)\n"
+                    f"追蹤: {trail_price:,.0f} (-{params_obj.atrTrailMult:.1f} ATR)"
+                )
+            else:
+                emoji = "⚪"
+                title = "觀望"
+                conditions = (
+                    f"❌ Donchian 未突破: {sig['close']:.0f} vs 高 {sig['donchian_high']:.0f}\n"
+                    f"{'✅' if sig['adx_ok'] else '❌'} ADX {sig['adx']:.1f} {'≥' if sig['adx_ok'] else '<'} {params_obj.adxThreshold}\n"
+                    f"{'✅' if sig['trend_ok'] else '❌'} 趨勢過濾\n"
+                    f"{'✅' if sig['atr_ok'] else '❌'} ATR {sig['atr']:.1f}"
+                )
+                trade_plan = ""
 
-{'✅ 3 項全達標' if m.overallPass else '❌ 未達標'}
-"""
+            msg = f"""{emoji} HSI 動量突破 - {title}
+📅 {sig['date']} | HSI 收 {sig['close']:,.0f}
+
+{conditions}{trade_plan}
+
+⚙️ 策略: D{params_obj.donchianPeriod} / ADX{params_obj.adxThreshold} / SL{params_obj.atrStopMult} / TP{params_obj.atrProfitMult} / Risk{int(params_obj.riskPerTrade*100)}%"""
             try:
                 import requests
-                url = f"https://api.telegram.org/bot{st.session_state.telegram_token}/sendMessage"
-                r = requests.post(url, json={"chat_id": st.session_state.telegram_chat_id, "text": msg}, timeout=10)
+                url = f"https://api.telegram.org/bot{tg_token}/sendMessage"
+                r = requests.post(url, json={"chat_id": tg_chat, "text": msg, "parse_mode": "HTML"}, timeout=10)
                 if r.status_code == 200:
                     st.success("✅ 推送到 Telegram 成功")
+                    with st.expander("📨 訊息內容"):
+                        st.code(msg)
                 else:
-                    st.error(f"❌ 推送失敗: {r.status_code}")
+                    st.error(f"❌ 推送失敗: {r.status_code} {r.text[:200]}")
             except Exception as e:
-                st.error(f"❌ 推送失敗: {e}")
-
+                # 直連失敗 → 透過 GitHub Actions 中轉
+                st.warning(f"⚠️ 直連 Telegram 失敗 ({type(e).__name__}), 改用 GitHub Actions 中轉...")
+                with st.spinner("觸發 telegram-notify workflow..."):
+                    result = trigger_telegram_workflow(msg, tg_chat)
+                if result.get("ok"):
+                    st.success(f"✅ {result.get('msg')}")
+                    with st.expander("📨 訊息內容"):
+                        st.code(msg)
+                else:
+                    st.error(f"❌ GitHub 中轉失敗: {result.get('error')}")
+                    st.caption("💡 提示: Streamlit Cloud App settings → Secrets 需要加 `GITHUB_PAT`, repo 需要 secrets: `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`")
+    else:
+        st.info("👆 點上方「🔍 檢查最新信號」按鈕")
 
 
 with tab_formulas:
