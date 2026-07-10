@@ -1,0 +1,31 @@
+{
+  "name": "TRIPLE-PASS",
+  "saved_at": "2026-07-10T16:49:47.199599Z",
+  "params": {
+    "donchianPeriod": 5,
+    "atrPeriod": 14,
+    "adxPeriod": 14,
+    "adxThreshold": 18,
+    "atrStopMult": 2.0,
+    "atrProfitMult": 0.6,
+    "atrTrailMult": 2.5,
+    "riskPerTrade": 0.15,
+    "enableTrailing": false,
+    "useTrendFilter": true,
+    "trendPeriod": 50,
+    "partialProfit": true,
+    "partialProfitRatio": 0.5,
+    "allowReentry": false,
+    "startingCapital": 100000.0
+  },
+  "metrics": {
+    "winRate": 0.857,
+    "annualReturn": 0.1057,
+    "maxDrawdown": 0.1235,
+    "profitFactor": 2.44,
+    "sharpe": 0.79,
+    "totalTrades": 21,
+    "overallPass": true
+  },
+  "note": "🏆 20,000 組合 grid search 達標配置 (WR 85.7% / AR +10.57% / MDD 12.35%)"
+}
