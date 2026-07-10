@@ -82,34 +82,35 @@ def pd_isnan(v):
         return False
 
 
-def fetch_hsi_1h_yfinance() -> list:
-    """從 yfinance 拉 HSI 1h K (60 天歷史限制, 多次分段拉)"""
+def fetch_hsi_1h_yfinance(max_retries: int = 3) -> list:
+    """從 yfinance 拉 HSI 1h K (60 天歷史限制) - 加重試避免 rate limit"""
     try:
         import yfinance as yf
     except ImportError:
         return []
-    import pandas as pd
+    import time as _time
 
     all_bars = []
-    # yfinance 1h 最多 730 天歷史, 多次拉
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=720)
-
-    try:
-        df = yf.download("^HSI", start=start_date, end=end_date, interval="1h", progress=False)
-        if df is not None and len(df) > 0:
-            for idx, row in df.iterrows():
-                all_bars.append({
-                    "date": idx.strftime("%Y-%m-%d %H:%M:%S"),
-                    "open": float(row['Open'].values[0]) if hasattr(row['Open'], 'values') else float(row['Open']),
-                    "high": float(row['High'].values[0]) if hasattr(row['High'], 'values') else float(row['High']),
-                    "low": float(row['Low'].values[0]) if hasattr(row['Low'], 'values') else float(row['Low']),
-                    "close": float(row['Close'].values[0]) if hasattr(row['Close'], 'values') else float(row['Close']),
-                    "volume": float(row['Volume'].values[0]) if hasattr(row['Volume'], 'values') else float(row['Volume']),
-                })
-    except Exception as e:
-        return []
-    return all_bars
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            df = yf.download("^HSI", period="60d", interval="1h", progress=False)
+            if df is not None and len(df) > 0:
+                for idx, row in df.iterrows():
+                    all_bars.append({
+                        "date": idx.strftime("%Y-%m-%d %H:%M:%S"),
+                        "open": float(row['Open'].values[0]) if hasattr(row['Open'], 'values') else float(row['Open']),
+                        "high": float(row['High'].values[0]) if hasattr(row['High'], 'values') else float(row['High']),
+                        "low": float(row['Low'].values[0]) if hasattr(row['Low'], 'values') else float(row['Low']),
+                        "close": float(row['Close'].values[0]) if hasattr(row['Close'], 'values') else float(row['Close']),
+                        "volume": float(row['Volume'].values[0]) if hasattr(row['Volume'], 'values') else float(row['Volume']),
+                    })
+                return all_bars
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                _time.sleep(20)  # 每次重試等 20 秒
+    return []  # 重試完都失敗, 返回空
 
 
 def push_to_repo(filename: str, data: list, commit_msg: str = "", token: str = "") -> dict:

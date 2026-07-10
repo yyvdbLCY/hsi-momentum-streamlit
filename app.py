@@ -25,6 +25,7 @@ from backtest import (
     DEFAULT_PARAMS, BacktestParams, OHLCBar, check_latest_signal,
 )
 from storage import list_params, save_params, load_params, delete_params, trigger_telegram_workflow, MAX_FILES
+from data_updater import update_hsi_daily, update_hsi_1h
 from dataclasses import asdict
 
 st.set_page_config(
@@ -480,6 +481,30 @@ with tab_monitor:
     st.divider()
     st.markdown("### 📊 資料來源")
     data_source = st.radio("選擇", options=["yahoo", "tiger"], format_func=lambda x: "📊 Yahoo Finance (免費)" if x == "yahoo" else "🐯 老虎證券 API", horizontal=True, key="data_source_radio")
+
+    # 更新數據按鈕
+    with st.expander("🔄 更新數據", expanded=False):
+        col_u1, col_u2 = st.columns(2)
+        with col_u1:
+            if st.button("📊 更新日 K", use_container_width=True, key="update_daily_btn"):
+                with st.spinner("AkShare 拉取中..."):
+                    r = update_hsi_daily()
+                if r.get("ok"):
+                    st.success(f"✅ {r['bars']} 筆, 最後 {r.get('last_date', '?')}")
+                    st.info("💡 重新整理頁面讀取新數據")
+                else:
+                    st.error(f"❌ {r.get('error', '失敗')}")
+        with col_u2:
+            if st.button("⏱️ 更新 1h K", use_container_width=True, key="update_1h_btn"):
+                with st.spinner("yfinance 拉取中 (重試 3 次, 約 1 分鐘)..."):
+                    r = update_hsi_1h()
+                if r.get("ok"):
+                    st.success(f"✅ {r['bars']} 筆, 最後 {r.get('last_date', '?')}")
+                    st.info("💡 重新整理頁面讀取新數據")
+                else:
+                    st.error(f"❌ {r.get('error', '失敗')}")
+                    st.caption("💡 yfinance rate limit 時請明天再試, 或接受用日 K 跑 backtest")
+        st.caption("更新後 `data/hsi.json` 跟 `data/hsi_1h.json` 會推送到 GitHub repo")
 
     if data_source == "tiger":
         st.warning("""
