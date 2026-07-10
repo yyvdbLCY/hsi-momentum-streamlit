@@ -24,7 +24,7 @@ from backtest import (
     load_bars, run_backtest, optimize_parameters, score_metrics,
     DEFAULT_PARAMS, BacktestParams, OHLCBar, check_latest_signal,
 )
-from storage import list_params, save_params, load_params, delete_params, trigger_telegram_workflow, MAX_FILES
+from storage import list_params, save_params, load_params, delete_params, trigger_telegram_workflow, test_token_permissions, MAX_FILES
 from data_updater import update_hsi_daily, update_hsi_1h
 from dataclasses import asdict
 
@@ -152,6 +152,20 @@ with st.sidebar.expander("💾 參數儲存", expanded=False):
 
     if not has_secret:
         st.error("⚠️ GITHUB_PAT 未設定\n\n(到 App settings → Secrets 加 `GITHUB_PAT = \"ghp_...\"`)")
+        # 診斷按鈕
+        with st.expander("🔍 診斷 GITHUB_PAT"):
+            st.caption("點下方按鈕測試 token 權限")
+            if st.button("🔍 測試 token", key="test_token_btn"):
+                with st.spinner("測試中..."):
+                    r = test_token_permissions()
+                if r.get("ok"):
+                    st.json(r)
+                    if r.get("help"):
+                        st.warning(r["help"])
+                else:
+                    st.error(f"❌ {r.get('error')}")
+                    if r.get("help"):
+                        st.info(r["help"])
     else:
         # 拿已儲存列表
         saved_items = list_params()

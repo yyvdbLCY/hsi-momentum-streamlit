@@ -29,6 +29,110 @@ def _get_token() -> str:
     return os.environ.get("GITHUB_PAT", "")
 
 
+def test_token_permissions(token: str = "") -> dict:
+    """
+    測試 GITHUB_PAT 權限
+    返回:
+      - ok: bool
+      - scopes: list of granted scopes
+      - can_read_contents: bool
+      - can_write_contents: bool
+      - can_dispatch: bool
+      - error: error message if any
+      - help: 修復建議
+    """
+    if not token:
+        token = _get_token()
+    if not token:
+        return {
+            "ok": False,
+            "error": "GITHUB_PAT 未設定",
+            "help": "請在 Streamlit Cloud → App settings → Secrets 加:\n\nGITHUB_PAT = \"ghp_...\"",
+        }
+
+    result = {
+        "ok": True,
+        "scopes": [],
+        "can_read_contents": False,
+        "can_write_contents": False,
+        "can_dispatch": False,
+        "token_prefix": token[:7] + "..." if len(token) > 7 else "(太短)",
+    }
+
+    # 1. 看 token scope
+    try:
+        req = urllib.request.Request(
+            "https://api.github.com/user",
+            headers={"Authorization": f"token {token}", "User-Agent": "test"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            # 從 header 看 scope
+            for h, v in resp.getheaders():
+                if h.lower() == "x-oauth-scopes":
+                    result["scopes"] = v.split(", ") if v else []
+            # 拿 user 資料
+            user = json.loads(resp.read().decode("utf-8"))
+            result["login"] = user.get("login", "?")
+            result["user_type"] = user.get("type", "?")
+    except urllib.error.HTTPError as e:
+        return {"ok": False, "error": f"Token 無效: HTTP {e.code} {e.reason}"}
+
+    # 2. 測讀 Contents API
+    code_read, _ = _api(f"/repos/{REPO}/contents/{PARAMS_DIR}", token=token)
+    result["can_read_contents"] = (code_read == 200)
+
+    # 3. 測寫 Contents API (創建測試文件, 然后刪)
+    test_path = f"{PARAMS_DIR}/__test_perm.txt"
+    test_content_b64 = base64.b64encode(b"test").decode("utf-8")
+    code_write, resp_write = _api(
+        f"/repos/{REPO}/contents/{test_path}",
+        method="PUT",
+        token=token,
+        body={"message": "test permission", "content": test_content_b64, "branch": BRANCH},
+    )
+    result["can_write_contents"] = (code_write in (200, 201))
+    if not result["can_write_contents"]:
+        result["write_error"] = resp_write.get("message", "unknown")
+
+    # 清理測試文件
+    if code_write in (200, 201):
+        sha = resp_write.get("content", {}).get("sha", "")
+        if sha:
+            _api(
+                f"/repos/{REPO}/contents/{test_path}",
+                method="DELETE",
+                token=token,
+                body={"message": "cleanup test", "sha": sha, "branch": BRANCH},
+            )
+
+    # 4. 測 dispatch workflow
+    code_dispatch, _ = _api(
+        f"/repos/{REPO}/dispatches",
+        method="POST",
+        token=token,
+        body={"event_type": "perm-test", "client_payload": {}},
+    )
+    result["can_dispatch"] = (code_dispatch == 204)
+
+    # 5. 修復建議
+    if not result["can_write_contents"]:
+        if "classic" in result.get("user_type", "").lower() or not any("workflow" in s for s in result["scopes"]):
+            result["help"] = (
+                "⚠️ Token 權限不足。建議:\n\n"
+                "1. 去 https://github.com/settings/tokens?type=beta\n"
+                "2. Generate **Fine-grained personal access token**\n"
+                "3. Repository: 只選 yyvdbLCY/hsi-momentum-streamlit\n"
+                "4. Permissions:\n"
+                "   - Contents: **Read and write** ✅\n"
+                "   - Actions: Read and write ✅\n"
+                "5. 複製新 token 設到 Streamlit Cloud Secrets"
+            )
+        else:
+            result["help"] = f"寫入失敗: {result.get('write_error', 'unknown')}"
+
+    return result
+
+
 def _api(path: str, method: str = "GET", token: str = "", body: Optional[dict] = None) -> tuple:
     """呼叫 GitHub API, 返回 (status_code, response_dict)"""
     url = f"https://api.github.com{path}"
