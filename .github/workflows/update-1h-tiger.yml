@@ -1,0 +1,108 @@
+name: Update 1h K via Tiger
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "拉幾天 (預設 30)"
+        required: false
+        type: number
+        default: 30
+  schedule:
+    # HKT 18:00 (港股收盤後) = UTC 10:00
+    # 用戶偏好不要內建 cron, 但這個 workflow 是可選的 backup
+    - cron: '0 10 * * 1-5'
+
+jobs:
+  update-1h:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tigeropen
+        run: pip install tigeropen==3.6.0
+
+      - name: Fetch 1h K from Tiger
+        env:
+          TIGER_ID: ${{ secrets.TIGER_ID }}
+          TIGER_ACCOUNT: ${{ secrets.TIGER_ACCOUNT }}
+          TIGER_TOKEN: ${{ secrets.TIGER_TOKEN }}
+          TIGER_RSA_PRIVATE_KEY: ${{ secrets.TIGER_RSA_PRIVATE_KEY }}
+          DAYS: ${{ github.event.inputs.days || '30' }}
+        run: |
+          python3 << 'PYEOF'
+          import os
+          import json
+          from datetime import datetime, timedelta
+          from tigeropen.quote.quote_client import QuoteClient
+          from tigeropen.tiger_open_config import TigerOpenClientConfig
+          from tigeropen.common.util.signature_utils import read_private_key
+          from tigeropen.common.consts import BarPeriod
+
+          # 1. 寫 PK 文件
+          pk_path = "/tmp/tiger_pk.pem"
+          with open(pk_path, 'w') as f:
+              f.write(os.environ['TIGER_RSA_PRIVATE_KEY'])
+          pk_base64 = read_private_key(pk_path)
+
+          # 2. 構造 config
+          config = TigerOpenClientConfig()
+          config.tiger_id = os.environ['TIGER_ID']
+          config.account = os.environ['TIGER_ACCOUNT']
+          config.token = os.environ['TIGER_TOKEN']
+          config.license = "TBHK"
+          config.private_key = pk_base64
+
+          client = QuoteClient(config)
+          print("✓ Tiger client OK")
+
+          # 3. 拉 HSI 1h K
+          days = int(os.environ.get('DAYS', '30'))
+          end = datetime.now().replace(hour=16, minute=0, second=0, microsecond=0)
+          begin = end - timedelta(days=days)
+          print(f"拉 HSI 1h K: {begin.date()} → {end.date()}")
+
+          klines = client.get_kline(['HSI'], BarPeriod.HOUR, begin, end)
+          if not klines:
+              print("❌ No klines returned")
+              exit(1)
+
+          bars = []
+          for k in klines:
+              bars.append({
+                  "date": k.time.strftime("%Y-%m-%d %H:%M:%S"),
+                  "open": float(k.open),
+                  "high": float(k.high),
+                  "low": float(k.low),
+                  "close": float(k.close),
+                  "volume": float(k.volume) if k.volume else 0,
+              })
+
+          print(f"✓ Got {len(bars)} bars")
+          if bars:
+              print(f"  First: {bars[0]['date']} C={bars[0]['close']:.0f}")
+              print(f"  Last:  {bars[-1]['date']} C={bars[-1]['close']:.0f}")
+
+          with open('data/hsi_1h.json', 'w', encoding='utf-8') as f:
+              json.dump(bars, f, indent=2, ensure_ascii=False)
+          print(f"✓ Saved to data/hsi_1h.json ({len(bars)} bars)")
+          PYEOF
+
+      - name: Commit and push
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add data/hsi_1h.json
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: 更新 HSI 1h K (Tiger API)"
+            git push
+          fi
