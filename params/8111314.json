@@ -1,0 +1,31 @@
+{
+  "name": "8111314",
+  "saved_at": "2026-07-10T17:58:57.050896Z",
+  "params": {
+    "donchianPeriod": 5,
+    "atrPeriod": 14,
+    "adxPeriod": 14,
+    "adxThreshold": 15.0,
+    "atrStopMult": 2.0,
+    "atrProfitMult": 0.6,
+    "atrTrailMult": 2.5,
+    "riskPerTrade": 0.15,
+    "enableTrailing": false,
+    "useTrendFilter": true,
+    "trendPeriod": 20,
+    "partialProfit": true,
+    "partialProfitRatio": 0.5,
+    "allowReentry": false,
+    "startingCapital": 100000
+  },
+  "metrics": {
+    "winRate": 0.8181818181818182,
+    "annualReturn": 1.1294716803966636,
+    "maxDrawdown": 0.13955574133516827,
+    "profitFactor": 1.8600244299984265,
+    "sharpe": 1.8791923530653083,
+    "totalTrades": 143,
+    "overallPass": true
+  },
+  "note": "全部達標"
+}
