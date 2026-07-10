@@ -133,6 +133,83 @@ with st.sidebar.expander("💵 倉位/資金", expanded=False):
 
 st.session_state.params = params
 
+# ============== Sidebar 參數儲存 ==============
+
+with st.sidebar.expander("💾 參數儲存", expanded=False):
+    # GITHUB_PAT 狀態檢查
+    try:
+        has_secret = bool(st.secrets.get("GITHUB_PAT", ""))
+    except Exception:
+        has_secret = bool(os.environ.get("GITHUB_PAT", ""))
+
+    if not has_secret:
+        st.error("⚠️ GITHUB_PAT 未設定\n\n(到 App settings → Secrets 加 `GITHUB_PAT = \"ghp_...\"`)")
+    else:
+        # 拿已儲存列表
+        saved_items = list_params()
+        count = len(saved_items)
+        st.caption(f"已儲存: {count} / {MAX_FILES} 個")
+
+        # === 載入區 ===
+        if saved_items:
+            load_options = [it['name'] for it in saved_items]
+            selected = st.selectbox("📂 載入已儲存", options=["— 選擇 —"] + load_options, key="sidebar_load_select")
+            if st.button("📥 載入", use_container_width=True, key="sidebar_load_btn", disabled=(selected == "— 選擇 —")):
+                data = load_params(selected)
+                if data and 'params' in data:
+                    valid_keys = {f.name for f in BacktestParams.__dataclass_fields__.values()}
+                    filtered = {k: v for k, v in data['params'].items() if k in valid_keys}
+                    st.session_state.params = filtered
+                    st.success(f"✅ 已載入 `{selected}`")
+                    st.rerun()
+                else:
+                    st.error("❌ 載入失敗")
+        else:
+            st.caption("（還沒有儲存任何參數）")
+
+        st.divider()
+
+        # === 儲存區 ===
+        new_name = st.text_input("💾 另存新名", placeholder="例: 保守 / Donchian10", max_chars=40, key="sidebar_save_name")
+        new_note = st.text_input("備註 (可選)", placeholder="例: 20k 組合 grid search 達標", max_chars=80, key="sidebar_save_note")
+        save_disabled = not new_name or count >= MAX_FILES
+        if st.button("💾 儲存", use_container_width=True, key="sidebar_save_btn", disabled=save_disabled):
+            current_metrics = {}
+            if st.session_state.result is not None:
+                m = st.session_state.result.metrics
+                current_metrics = {
+                    'winRate': m.winRate, 'annualReturn': m.annualReturn,
+                    'maxDrawdown': m.maxDrawdown, 'profitFactor': m.profitFactor,
+                    'sharpe': m.sharpe, 'totalTrades': m.totalTrades,
+                    'overallPass': m.overallPass,
+                }
+            with st.spinner("儲存中..."):
+                r = save_params(new_name, st.session_state.params, current_metrics, new_note)
+            if r.get("ok"):
+                st.success(f"✅ 已儲存 `{r['name']}`")
+                st.rerun()
+            else:
+                st.error(f"❌ {r.get('error', '失敗')}")
+        if count >= MAX_FILES:
+            st.caption(f"⚠️ 已達 {MAX_FILES} 個上限, 請先在下方刪除舊的")
+
+        # === 刪除區 ===
+        if saved_items:
+            st.divider()
+            with st.popover("🗑️ 管理已儲存"):
+                for item in saved_items:
+                    col_n, col_d = st.columns([3, 1])
+                    with col_n:
+                        st.caption(item['name'])
+                    with col_d:
+                        if st.button("刪", key=f"sidebar_del_{item['name']}", type="secondary"):
+                            r = delete_params(item['name'])
+                            if r.get("ok"):
+                                st.success(f"✅ 已刪除 {item['name']}")
+                                st.rerun()
+                            else:
+                                st.error(f"❌ {r.get('error', '失敗')}")
+
 st.sidebar.divider()
 
 col_run, col_opt = st.sidebar.columns(2)
@@ -143,8 +220,8 @@ opt_btn = col_opt.button("🔍 優化", use_container_width=True)
 
 st.title("📊 HSI 動量突破回測系統")
 
-tab_backtest, tab_optimize, tab_monitor, tab_saved, tab_formulas = st.tabs([
-    "📈 回測", "🔍 優化", "📡 即時監察", "💾 參數儲存", "📐 公式"
+tab_backtest, tab_optimize, tab_monitor, tab_formulas = st.tabs([
+    "📈 回測", "🔍 優化", "📡 即時監察", "📐 公式"
 ])
 
 # ============== Tab 1: Backtest ==============
@@ -460,136 +537,6 @@ PF: {m.profitFactor:.2f if m.profitFactor < 100 else '∞'}
                     st.error(f"❌ 推送失敗: {r.status_code}")
             except Exception as e:
                 st.error(f"❌ 推送失敗: {e}")
-
-# ============== Tab 4: 參數儲存 ==============
-
-with tab_saved:
-    st.subheader("💾 策略參數儲存")
-    st.markdown(f"""
-    儲存當前 sidebar 參數到 GitHub repo, 跨裝置、跨 session 同步讀取。**最多儲存 {MAX_FILES} 個檔案**。
-
-    - 🔑 需要設定 `GITHUB_PAT` 在 Streamlit secrets (Settings → Secrets)
-    - 儲存位置: `yyvdbLCY/hsi-momentum-streamlit/params/`
-    - 包含: 參數 + 最近一次回測指標 + 用戶備註
-    """)
-
-    # GITHUB_PAT 狀態檢查
-    try:
-        import streamlit as st
-        has_secret = bool(st.secrets.get("GITHUB_PAT", ""))
-    except Exception:
-        has_secret = bool(os.environ.get("GITHUB_PAT", ""))
-
-    if not has_secret:
-        st.error("⚠️ GITHUB_PAT 未設定。請到 Streamlit Cloud → App settings → Secrets 加入 `GITHUB_PAT = \"ghp_...\"`")
-        st.stop()
-
-    st.divider()
-
-    # === 儲存當前參數 ===
-    st.markdown("### 📤 儲存當前參數")
-    col_s1, col_s2 = st.columns([2, 3])
-    with col_s1:
-        save_name = st.text_input("檔案名稱", placeholder="例: TRIPLE-PASS / 保守 / Donchian10", max_chars=40, key="save_name_input")
-    with col_s2:
-        save_note = st.text_input("備註 (可選)", placeholder="例: 20,000 組合 grid search 最佳", max_chars=80, key="save_note_input")
-
-    if st.button("💾 儲存", type="primary", disabled=not save_name):
-        # 拿當前回測的 metrics (如果有的話)
-        current_metrics = {}
-        if st.session_state.result is not None:
-            m = st.session_state.result.metrics
-            current_metrics = {
-                'winRate': m.winRate,
-                'annualReturn': m.annualReturn,
-                'maxDrawdown': m.maxDrawdown,
-                'profitFactor': m.profitFactor,
-                'sharpe': m.sharpe,
-                'totalTrades': m.totalTrades,
-                'overallPass': m.overallPass,
-            }
-        with st.spinner("儲存中..."):
-            result = save_params(save_name, st.session_state.params, current_metrics, save_note)
-        if result.get("ok"):
-            st.success(f"✅ 儲存成功! {'更新' if result.get('action') == 'update' else '新建'} `params/{result['name']}.json`")
-            st.rerun()
-        else:
-            st.error(f"❌ 儲存失敗: {result.get('error', '未知錯誤')}")
-
-    st.divider()
-
-    # === 已儲存列表 ===
-    st.markdown(f"### 📂 已儲存參數 ({MAX_FILES} 個上限)")
-
-    saved_list = list_params()
-    if not saved_list:
-        st.info("還沒有儲存任何參數檔。在上方輸入檔名並按「💾 儲存」即可建立第一個。")
-    else:
-        st.caption(f"已有 {len(saved_list)} / {MAX_FILES} 個檔案")
-
-        for item in saved_list:
-            with st.container():
-                # 預先 load 拿 metrics + note (因為 list 只返 name+size)
-                preview_data = load_params(item['name'])
-                metrics = preview_data.get('metrics', {}) if preview_data else {}
-                note = preview_data.get('note', '') if preview_data else ''
-                saved_at = preview_data.get('saved_at', 'unknown') if preview_data else 'unknown'
-
-                # 一個參數檔一個 expander
-                pass_icon = "✅✅✅ TRIPLE-PASS" if metrics.get('overallPass') else ""
-                wr = metrics.get('winRate', 0) * 100
-                ar = metrics.get('annualReturn', 0) * 100
-                mdd = metrics.get('maxDrawdown', 0) * 100
-                trades = metrics.get('totalTrades', 0)
-                metric_str = f"勝率 {wr:.1f}% / 年化 {ar:+.2f}% / MDD {mdd:.2f}% / {trades} 筆 {pass_icon}"
-
-                exp_label = f"📄 **{item['name']}** — {metric_str}"
-                if note:
-                    exp_label += f"\n\n💬 {note}"
-
-                with st.expander(exp_label, expanded=False):
-                    st.caption(f"建立: {saved_at} | 大小: {item['size']} bytes")
-
-                    col_a, col_b, col_c = st.columns(3)
-                    with col_a:
-                        if st.button(f"📥 載入", key=f"load_{item['name']}", use_container_width=True):
-                            data = load_params(item['name'])
-                            if data and 'params' in data:
-                                # 過濾掉 BacktestParams 沒有的 keys
-                                valid_keys = {f.name for f in BacktestParams.__dataclass_fields__.values()}
-                                filtered = {k: v for k, v in data['params'].items() if k in valid_keys}
-                                st.session_state.params = filtered
-                                st.success(f"✅ 已載入 `{item['name']}`, 參數套用到 sidebar, 按「🚀 跑回測」查看")
-                                st.rerun()
-                            else:
-                                st.error("❌ 載入失敗")
-                    with col_b:
-                        if st.button(f"🗑️ 刪除", key=f"del_{item['name']}", type="secondary", use_container_width=True):
-                            with st.spinner("刪除中..."):
-                                r = delete_params(item['name'])
-                            if r.get("ok"):
-                                st.success(f"✅ 已刪除 `{item['name']}`")
-                                st.rerun()
-                            else:
-                                st.error(f"❌ 刪除失敗: {r.get('error', '未知')}")
-                    with col_c:
-                        st.caption("")
-
-                    # 顯示原始 JSON (可下載)
-                    with st.popover("🔍 原始內容"):
-                        data = load_params(item['name'])
-                        if data:
-                            st.json(data)
-                            st.download_button(
-                                "📥 下載 JSON",
-                                json.dumps(data, indent=2, ensure_ascii=False).encode(),
-                                f"{item['name']}.json",
-                                "application/json",
-                                key=f"dl_{item['name']}",
-                            )
-
-    st.divider()
-    st.caption("💡 提示: Streamlit Cloud 部署後, 到 App settings → Secrets 加入 `GITHUB_PAT`, 即可啟用儲存功能。")
 
 
 
