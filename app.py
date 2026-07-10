@@ -70,7 +70,7 @@ if 'result' not in st.session_state:
 if 'opt_result' not in st.session_state:
     st.session_state.opt_result = None
 if 'interval' not in st.session_state:
-    st.session_state.interval = "daily"
+    st.session_state.interval = "1h"
 if 'data_source' not in st.session_state:
     st.session_state.data_source = "yahoo"
 if 'telegram_token' not in st.session_state:
