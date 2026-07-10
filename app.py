@@ -606,7 +606,7 @@ with tab_monitor:
             try:
                 import requests
                 url = f"https://api.telegram.org/bot{tg_token}/sendMessage"
-                r = requests.post(url, json={"chat_id": tg_chat, "text": msg, "parse_mode": "HTML"}, timeout=10)
+                r = requests.post(url, json={"chat_id": tg_chat, "text": msg}, timeout=10)
                 if r.status_code == 200:
                     st.success("✅ 推送到 Telegram 成功")
                     with st.expander("📨 訊息內容"):

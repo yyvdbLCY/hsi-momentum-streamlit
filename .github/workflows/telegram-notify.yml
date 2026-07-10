@@ -49,7 +49,8 @@ jobs:
           import json, sys
           with open('/tmp/msg.txt', 'r') as f:
               msg = f.read()
-          print(json.dumps({'chat_id': '$CHAT_ID', 'text': msg, 'parse_mode': 'HTML', 'disable_web_page_preview': True}))
+          # 不指定 parse_mode, 純文字推 (避免 HTML/Markdown 解析失敗)
+          print(json.dumps({'chat_id': '$CHAT_ID', 'text': msg, 'disable_web_page_preview': True}))
           ")
           echo "Payload: $MSG_PAYLOAD"
 
