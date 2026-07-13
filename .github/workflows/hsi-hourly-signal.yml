@@ -4,11 +4,10 @@ on:
   workflow_dispatch:
   repository_dispatch:
     types: [hsi-hourly-signal]
-  schedule:
-    # 港股交易日 11:00-15:30 HKT 每小時 (UTC 03:00-07:30)
-    # 但 1h K 拉 yfinance 不用那麼頻繁, 改 11:30 HKT 跑 (UTC 03:30)
-    # 港股周一至周五 09:00-16:00 HKT, 11:30 HKT 是午盤前
-    - cron: '30 3 * * 1-5'
+  # schedule 暫時關閉, 等用戶設定 cron-job.org 後再加
+  # schedule:
+  #   # 港股交易日 11:30 HKT 自動跑 (UTC 03:30 = HKT 11:30)
+  #   - cron: '30 3 * * 1-5'
 
 permissions:
   contents: write
