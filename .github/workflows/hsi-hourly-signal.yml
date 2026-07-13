@@ -175,6 +175,28 @@ jobs:
           tp_price = sig['close'] + sig['atr'] * p.atrProfitMult
           trail_price = sig['close'] - sig['atr'] * p.atrTrailMult
 
+          # ============== 5.5 跑 backtest 拿 metrics (配置達標狀態) ==============
+          print("\n=== Step 5.5: 跑 backtest 拿 metrics ===")
+          from backtest import run_backtest
+          backtest_result = run_backtest(objs, params, bars_per_year=1750)  # 1h K 1750 bars/year
+          m = backtest_result.metrics
+          wr = m.winRate
+          ar = m.annualReturn
+          mdd = m.maxDrawdown
+          n_trades = m.totalTrades
+          pf = m.profitFactor
+          print(f"  ✓ Backtest: WR {wr*100:.1f}% / AR {ar*100:+.1f}% / MDD {mdd*100:.1f}% / PF {pf:.2f} / {n_trades} 筆")
+
+          # TRIPLE-PASS 達標狀態 (用戶目標: 勝率≥80% / 年化≥10% / MDD≤15%)
+          wr_ok = wr >= 0.80
+          ar_ok = ar >= 0.10
+          mdd_ok = mdd <= 0.15
+          triple_pass = wr_ok and ar_ok and mdd_ok
+          print(f"  TRIPLE-PASS: WR≥80% {'✅' if wr_ok else '❌'} / AR≥10% {'✅' if ar_ok else '❌'} / MDD≤15% {'✅' if mdd_ok else '❌'} → {'✅ 達標' if triple_pass else '❌ 未達標'}")
+
+          metrics_line = f"📊 配置回測 (14 個月 1h K): 勝率 {wr*100:.1f}% / 年化 {ar*100:+.1f}% / MDD {mdd*100:.1f}% / {n_trades} 筆"
+          target_line = f"🎯 TRIPLE-PASS 目標: 勝率≥80% {'✅' if wr_ok else '❌'} / 年化≥10% {'✅' if ar_ok else '❌'} / MDD≤15% {'✅' if mdd_ok else '❌'} → {'✅ 達標' if triple_pass else '❌ 未達標'}"
+
           # ============== 6. 組 Telegram 訊息 ==============
           if sig['signal_buy']:
               emoji = "🟢"
@@ -207,7 +229,9 @@ jobs:
               f"{emoji} HSI 動量突破 [1h] - {title}\n"
               f"📅 {sig['date']} | HSI {sig['close']:,.0f}\n\n"
               f"{conditions}{trade_plan}\n\n"
-              f"⚙️ D{p.donchianPeriod} / ADX{p.adxThreshold} / SL{p.atrStopMult} / TP{p.atrProfitMult} / Risk{int(p.riskPerTrade*100)}%"
+              f"⚙️ D{p.donchianPeriod} / ADX{p.adxThreshold} / SL{p.atrStopMult} / TP{p.atrProfitMult} / Risk{int(p.riskPerTrade*100)}%\n"
+              f"{metrics_line}\n"
+              f"{target_line}"
           )
 
           # ============== 7. 觸發 Telegram ==============
