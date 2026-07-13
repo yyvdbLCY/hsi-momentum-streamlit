@@ -2,12 +2,6 @@ name: HSI Hourly Signal
 
 on:
   workflow_dispatch:
-    inputs:
-      chat_id:
-        description: "Telegram Chat ID (留空用 secret)"
-        required: false
-        type: string
-        default: ""
   repository_dispatch:
     types: [hsi-hourly-signal]
 
@@ -18,29 +12,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 5
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install yfinance
-        run: pip install yfinance --quiet
+      - name: Install dependencies
+        run: pip install --quiet pandas numpy
 
-      - name: Pull latest 1h K + run signal check
+      - name: Run signal check
         env:
-          INPUT_CHAT_ID: ${{ inputs.chat_id }}
-          DISPATCH_CHAT_ID: ${{ github.event.client_payload.chat_id }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python3 << 'PYEOF'
           import os
-          import sys
           import json
           import time
-          import subprocess
           import urllib.request
           import urllib.error
           from datetime import datetime, timedelta
@@ -68,69 +56,54 @@ jobs:
                   return e.code, json.loads(e.read().decode("utf-8") or "{}")
 
           def push_to_repo(path, content_bytes, commit_msg):
-              content_b64 = __import__("base64").b64encode(content_bytes).decode("utf-8")
+              import base64
+              content_b64 = base64.b64encode(content_bytes).decode("utf-8")
               code, existing = api(f"/repos/{REPO}/contents/{path}")
               sha = existing.get("sha") if code == 200 else None
-              body = {
-                  "message": commit_msg,
-                  "content": content_b64,
-                  "branch": BRANCH,
-              }
+              body = {"message": commit_msg, "content": content_b64, "branch": BRANCH}
               if sha:
                   body["sha"] = sha
               code, resp = api(f"/repos/{REPO}/contents/{path}", method="PUT", body=body)
               return code in (200, 201), resp
 
-          # 1. 嘗試 yfinance 更新 1h K
-          print("=== 1. 拉 1h K (yfinance 重試 3 次) ===")
+          # 1. 拉 1h K
+          print("=== 拉 1h K ===")
           bars = None
-          for attempt in range(3):
-              try:
-                  import yfinance as yf
-                  df = yf.download("^HSI", period="60d", interval="1h", progress=False)
-                  if df is not None and len(df) > 0:
-                      bars = []
-                      for idx, row in df.iterrows():
-                          bars.append({
-                              "date": idx.strftime("%Y-%m-%d %H:%M:%S"),
-                              "open": float(row['Open'].values[0]) if hasattr(row['Open'], 'values') else float(row['Open']),
-                              "high": float(row['High'].values[0]) if hasattr(row['High'], 'values') else float(row['High']),
-                              "low": float(row['Low'].values[0]) if hasattr(row['Low'], 'values') else float(row['Low']),
-                              "close": float(row['Close'].values[0]) if hasattr(row['Close'], 'values') else float(row['Close']),
-                              "volume": float(row['Volume'].values[0]) if hasattr(row['Volume'], 'values') else float(row['Volume']),
-                          })
-                      print(f"  ✓ yfinance 拉到 {len(bars)} 根 (第 {attempt+1} 次嘗試)")
-                      break
-              except Exception as e:
-                  print(f"  ⚠️ yfinance attempt {attempt+1}: {e}")
-                  if attempt < 2:
-                      time.sleep(20)
+          try:
+              import yfinance as yf
+              df = yf.download("^HSI", period="60d", interval="1h", progress=False)
+              if df is not None and len(df) > 0:
+                  bars = []
+                  for idx, row in df.iterrows():
+                      bars.append({
+                          "date": idx.strftime("%Y-%m-%d %H:%M:%S"),
+                          "open": float(row['Open'].values[0]) if hasattr(row['Open'], 'values') else float(row['Open']),
+                          "high": float(row['High'].values[0]) if hasattr(row['High'], 'values') else float(row['High']),
+                          "low": float(row['Low'].values[0]) if hasattr(row['Low'], 'values') else float(row['Low']),
+                          "close": float(row['Close'].values[0]) if hasattr(row['Close'], 'values') else float(row['Close']),
+                          "volume": float(row['Volume'].values[0]) if hasattr(row['Volume'], 'values') else float(row['Volume']),
+                      })
+                  print(f"  ✓ yfinance {len(bars)} 根")
+                  content = json.dumps(bars, ensure_ascii=False).encode("utf-8")
+                  ok, _ = push_to_repo("data/hsi_1h.json", content, f"chore: 更新 1h K ({len(bars)} 根)")
+                  if ok:
+                      print(f"  ✓ 推 GitHub OK")
+          except Exception as e:
+              print(f"  ⚠️ yfinance 失敗: {e}")
 
-          if bars:
-              # 推 GitHub
-              content = json.dumps(bars, ensure_ascii=False).encode("utf-8")
-              ok, resp = push_to_repo("data/hsi_1h.json", content, f"chore: 更新 1h K ({len(bars)} 根, {bars[-1]['date']})")
-              if ok:
-                  print(f"  ✓ 推到 GitHub: {len(bars)} 根, 最後 {bars[-1]['date']}")
-              else:
-                  print(f"  ⚠️ 推 GitHub 失敗: {resp}")
-          else:
-              print("  ⚠️ yfinance 全失敗, 用本地 data/hsi_1h.json")
+          if not bars:
+              print("  用本地 data/hsi_1h.json")
               with open("data/hsi_1h.json", "r") as f:
                   bars = json.load(f)
 
-          # 2. 跑信號計算
-          print("\n=== 2. 計算信號 ===")
+          # 2. 計算信號
+          print("\n=== 計算信號 ===")
+          import sys
           sys.path.insert(0, "src")
-          from backtest import check_latest_signal, DEFAULT_PARAMS, BacktestParams
+          from backtest import check_latest_signal, DEFAULT_PARAMS, OHLCBar
 
-          # 構造 OHLCBar 物件
-          from backtest import OHLCBar
           objs = [OHLCBar(date=b['date'], open=b['open'], high=b['high'], low=b['low'], close=b['close'], volume=b['volume']) for b in bars]
-
-          # 嘗試讀取用戶儲存的 params (取 DEFAULT_PARAMS 作為備用)
           params = DEFAULT_PARAMS
-
           sig = check_latest_signal(objs, params)
           p = params
 
@@ -138,7 +111,7 @@ jobs:
           tp_price = sig['close'] + sig['atr'] * p.atrProfitMult
           trail_price = sig['close'] - sig['atr'] * p.atrTrailMult
 
-          # 3. 組 Telegram 訊息
+          # 3. 組訊息
           if sig['signal_buy']:
               emoji = "🟢"
               title = "買入信號"
@@ -174,29 +147,17 @@ jobs:
           )
 
           # 4. 觸發 telegram-notify
-          print("\n=== 3. 推 Telegram ===")
-          chat_id = os.environ.get("INPUT_CHAT_ID", "") or os.environ.get("DISPATCH_CHAT_ID", "")
+          print("\n=== 推 Telegram ===")
           code, resp = api(
               f"/repos/{REPO}/dispatches",
               method="POST",
-              body={"event_type": "telegram-notify", "client_payload": {"message": msg, "chat_id": chat_id}},
+              body={"event_type": "telegram-notify", "client_payload": {"message": msg, "chat_id": ""}},
           )
-          if code == 204:
-              print(f"  ✓ telegram-notify 觸發成功")
-          else:
-              print(f"  ❌ 觸發失敗: HTTP {code} {resp}")
+          print(f"  telegram-notify trigger: HTTP {code}")
 
-          # 5. 寫 signal log 到 repo
+          # 5. 寫信號 log
           log_path = f"reports/signal-{datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
-          log_content = f"""# Signal {datetime.now().strftime('%Y-%m-%d %H:%M HKT')}
-
-```text
-{msg}
-```
-
----
-*Auto-generated by hsi-hourly-signal workflow*
-"""
+          log_content = f"# Signal {datetime.now().strftime('%Y-%m-%d %H:%M HKT')}\n\n```text\n{msg}\n```\n\n*Auto-generated by hsi-hourly-signal*"
           ok, _ = push_to_repo(log_path, log_content.encode("utf-8"), f"docs: signal log {datetime.now().isoformat()}")
-          print(f"  ✓ Signal log: {log_path}")
+          print(f"  signal log: {log_path}")
           PYEOF
