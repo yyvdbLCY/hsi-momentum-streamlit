@@ -177,15 +177,16 @@ with st.sidebar.expander("💾 參數儲存", expanded=False):
                     if r.get("help"):
                         st.info(r["help"])
     else:
-        # 拿已儲存列表
-        saved_items = list_params()
+        # 拿已儲存列表 (根據當前 interval 過濾)
+        saved_items = list_params(interval=interval)
         count = len(saved_items)
-        st.caption(f"已儲存: {count} / {MAX_FILES} 個")
+        interval_label = "1h 線" if interval == "1h" else "日線"
+        st.caption(f"已儲存 ({interval_label}): {count} / {MAX_FILES} 個")
 
         # === 載入區 ===
         if saved_items:
             load_options = [it['name'] for it in saved_items]
-            selected = st.selectbox("📂 載入已儲存", options=["— 選擇 —"] + load_options, key="sidebar_load_select")
+            selected = st.selectbox(f"📂 載入 {interval_label} 存檔", options=["— 選擇 —"] + load_options, key="sidebar_load_select")
             if st.button("📥 載入", use_container_width=True, key="sidebar_load_btn", disabled=(selected == "— 選擇 —")):
                 data = load_params(selected)
                 if data and 'params' in data:
@@ -204,6 +205,7 @@ with st.sidebar.expander("💾 參數儲存", expanded=False):
         # === 儲存區 ===
         new_name = st.text_input("💾 另存新名", placeholder="例: 保守 / Donchian10", max_chars=40, key="sidebar_save_name")
         new_note = st.text_input("備註 (可選)", placeholder="例: 20k 組合 grid search 達標", max_chars=80, key="sidebar_save_note")
+        # 根據當前 interval 預設標記
         save_disabled = not new_name or count >= MAX_FILES
         if st.button("💾 儲存", use_container_width=True, key="sidebar_save_btn", disabled=save_disabled):
             current_metrics = {}
@@ -216,7 +218,7 @@ with st.sidebar.expander("💾 參數儲存", expanded=False):
                     'overallPass': m.overallPass,
                 }
             with st.spinner("儲存中..."):
-                r = save_params(new_name, st.session_state.params, current_metrics, new_note)
+                r = save_params(new_name, st.session_state.params, current_metrics, new_note, interval=interval)
             if r.get("ok"):
                 st.success(f"✅ 已儲存 `{r['name']}`")
                 st.rerun()

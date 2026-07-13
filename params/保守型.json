@@ -27,5 +27,6 @@
     "totalTrades": 21,
     "overallPass": true
   },
-  "note": "🛡️ 保守配置 D=5/ADX=18/SL=3.5"
+  "note": "🛡️ 保守配置 D=5/ADX=18/SL=3.5",
+  "interval": "1h"
 }

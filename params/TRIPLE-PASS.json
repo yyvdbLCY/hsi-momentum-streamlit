@@ -27,5 +27,6 @@
     "totalTrades": 21,
     "overallPass": true
   },
-  "note": "🏆 20,000 組合 grid search 達標"
+  "note": "🏆 20,000 組合 grid search 達標",
+  "interval": "daily"
 }

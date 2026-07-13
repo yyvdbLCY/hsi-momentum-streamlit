@@ -27,5 +27,6 @@
     "totalTrades": 21,
     "overallPass": true
   },
-  "note": "🚀 進取配置 D=5/ADX=15/SL=2.0"
+  "note": "🚀 進取配置 D=5/ADX=15/SL=2.0",
+  "interval": "1h"
 }

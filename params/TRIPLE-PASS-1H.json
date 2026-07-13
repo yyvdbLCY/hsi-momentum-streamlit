@@ -27,5 +27,6 @@
     "totalTrades": 171,
     "overallPass": true
   },
-  "note": "基於 8111314 微調 (3000 組合 random sample), 三項目標全達標"
+  "note": "基於 8111314 微調 (3000 組合 random sample), 三項目標全達標",
+  "interval": "1h"
 }

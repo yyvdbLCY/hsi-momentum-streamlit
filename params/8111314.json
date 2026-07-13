@@ -27,5 +27,6 @@
     "totalTrades": 143,
     "overallPass": true
   },
-  "note": "全部達標"
+  "note": "全部達標",
+  "interval": "1h"
 }

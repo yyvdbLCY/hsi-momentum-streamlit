@@ -162,10 +162,12 @@ def _api(path: str, method: str = "GET", token: str = "", body: Optional[dict] =
         return 0, {"message": str(e)}
 
 
-def list_params(token: str = "") -> list:
+def list_params(token: str = "", interval: str = "") -> list:
     """
     列出所有儲存的參數檔
-    返回: [{"name": "xxx", "path": "params/xxx.json", "size": 123, ...}]
+    interval: "1h" / "daily" / "" (不限, 返回全部)
+    返回: [{"name": "xxx", "path": "params/xxx.json", "size": 123, "interval": "1h" | "daily" | ""}]
+    根據 interval 參數過濾: 只返回該 K 線類型或不限類型的檔案
     """
     if not token:
         token = _get_token()
@@ -181,16 +183,32 @@ def list_params(token: str = "") -> list:
     results = []
     for item in data:
         if item.get("type") == "file" and item.get("name", "").endswith(".json"):
+            # 拿 file content 讀 interval 標籤
+            file_interval = ""
+            try:
+                content_resp = _api(f"/repos/{REPO}/contents/{item['path']}", token=token)
+                if content_resp[0] == 200 and "content" in content_resp[1]:
+                    raw = base64.b64decode(content_resp[1]["content"])
+                    meta = json.loads(raw)
+                    file_interval = meta.get("interval", "")
+            except Exception:
+                pass
+
+            # 過濾: file_interval 為空 (不限) 或跟查詢的 interval 匹配
+            if interval and file_interval and file_interval != interval:
+                continue
+
             results.append({
                 "name": item["name"].replace(".json", ""),
                 "path": item["path"],
                 "size": item.get("size", 0),
                 "sha": item.get("sha", ""),
+                "interval": file_interval,
             })
     return results
 
 
-def save_params(name: str, params: dict, metrics: dict = None, note: str = "", token: str = "") -> dict:
+def save_params(name: str, params: dict, metrics: dict = None, note: str = "", token: str = "", interval: str = "") -> dict:
     """
     儲存參數到 params/{name}.json
     name: 檔案名(不含 .json)
@@ -217,6 +235,7 @@ def save_params(name: str, params: dict, metrics: dict = None, note: str = "", t
     content = {
         "name": clean_name,
         "saved_at": datetime.utcnow().isoformat() + "Z",
+        "interval": interval,  # "1h" | "daily" | ""
         "params": params,
         "metrics": metrics or {},
         "note": note,
