@@ -89,9 +89,8 @@ jobs:
                       })
                   print(f"  ✓ yfinance {len(bars)} 根")
                   content = json.dumps(bars, ensure_ascii=False).encode("utf-8")
-                  ok, _ = push_to_repo("data/hsi_1h.json", content, f"chore: 更新 1h K ({len(bars)} 根)")
-                  if ok:
-                      print(f"  ✓ 推 GitHub OK")
+                  # 不推 1h K 回 repo (避免 yfinance 60 天限制覆蓋用戶本地 14 個月 1h K)
+                  print(f"  ✓ 1h K 拉成功 {len(bars)} 根 (不推 repo, 用本地 14 個月數據計算信號)")
           except Exception as e:
               print(f"  ⚠️ yfinance 失敗: {e}")
 
