@@ -1,0 +1,31 @@
+{
+  "name": "TRIPLE-PASS-1H-TUNED",
+  "saved_at": "2026-07-14T00:11:00Z",
+  "params": {
+    "donchianPeriod": 3,
+    "atrPeriod": 14,
+    "adxPeriod": 14,
+    "adxThreshold": 10,
+    "atrStopMult": 2.5,
+    "atrProfitMult": 0.6,
+    "atrTrailMult": 2.5,
+    "riskPerTrade": 0.12,
+    "enableTrailing": true,
+    "useTrendFilter": true,
+    "trendPeriod": 20,
+    "partialProfit": true,
+    "partialProfitRatio": 0.5,
+    "allowReentry": false,
+    "startingCapital": 100000
+  },
+  "metrics": {
+    "winRate": 0.8245614035087719,
+    "annualReturn": 0.7378850719761083,
+    "maxDrawdown": 0.13593301802906996,
+    "profitFactor": 1.7768146979109551,
+    "sharpe": 2.010414335406129,
+    "totalTrades": 171,
+    "overallPass": true
+  },
+  "note": "基於 8111314 微調 (3000 組合 random sample), 三項目標全達標"
+}
