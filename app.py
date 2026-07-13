@@ -59,9 +59,18 @@ def fmt_money(v):
 # ============== Load Data ==============
 
 @st.cache_data
-def load_data(interval):
+def load_data(interval, file_mtime):
+    """Load HSI bars from JSON file. 傳 file_mtime 避免 cache 旧版本"""
     filepath = f"data/hsi.json" if interval == "daily" else "data/hsi_1h.json"
     return load_bars(filepath)
+
+def get_file_mtime(interval):
+    """拿 data file 最後修改時間, 作為 cache invalidation key"""
+    filepath = f"data/hsi.json" if interval == "daily" else "data/hsi_1h.json"
+    try:
+        return os.path.getmtime(filepath)
+    except Exception:
+        return 0
 
 # ============== Session State ==============
 
@@ -100,7 +109,8 @@ interval = st.sidebar.radio(
 )
 st.session_state.interval = interval
 
-bars = load_data(interval)
+file_mtime = get_file_mtime(interval)
+bars = load_data(interval, file_mtime)
 bars_per_year = 252 if interval == "daily" else 1750
 st.sidebar.success(f"✅ {len(bars)} 根 K 線\n\n{bars[0].date} → {bars[-1].date}")
 
