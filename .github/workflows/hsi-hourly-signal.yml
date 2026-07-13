@@ -2,6 +2,12 @@ name: HSI Hourly Signal
 
 on:
   workflow_dispatch:
+    inputs:
+      params_file:
+        description: "Params file (default 8111314 = 1h K 14 個月達標)"
+        required: false
+        type: string
+        default: "8111314"
   repository_dispatch:
     types: [hsi-hourly-signal]
   # schedule 暫時關閉, 等用戶設定 cron-job.org 後再加
@@ -46,6 +52,10 @@ jobs:
           BRANCH = "main"
           GH_TOKEN = os.environ["GITHUB_TOKEN"]
           DATA_PATH = "data/hsi_1h.json"
+          # 讀取 params_file input (workflow_dispatch) 或 env (cron-job.org)
+          PARAMS_FILE = os.environ.get("PARAMS_FILE", "8111314")  # 預設 1h K 14 個月達標配置
+          # 註: repository_dispatch 不帶 input, 走默認 8111314
+          # 預設值也可以由 client_payload.params_file 覆寫 (下方會處理)
 
           def api(path, method="GET", body=None):
               url = f"https://api.github.com{path}"
@@ -177,6 +187,23 @@ jobs:
 
           # ============== 5.5 跑 backtest 拿 metrics (配置達標狀態) ==============
           print("\n=== Step 5.5: 跑 backtest 拿 metrics ===")
+          # 讀取用戶指定的 params 檔 (從 GitHub Contents API)
+          code, params_resp = api(f"/repos/{REPO}/contents/params/{PARAMS_FILE}.json")
+          if code == 200 and "content" in params_resp:
+              import base64 as _b64
+              params_data = json.loads(_b64.b64decode(params_resp["content"]).decode("utf-8"))
+              params_dict = params_data.get("params", {})
+              print(f"  ✓ 載入配置: {params_data.get('name', PARAMS_FILE)} ({PARAMS_FILE}.json)")
+              # 把 dict 轉成 BacktestParams
+              from backtest import BacktestParams
+              params = BacktestParams(**{k: v for k, v in params_dict.items() if k in BacktestParams.__dataclass_fields__})
+              # 重新計算信號 (用新 params)
+              sig = check_latest_signal(objs, params)
+              p = params
+              print(f"  重新計算: HSI {sig['close']:.0f}, Donchian {sig['close']:.0f} vs {sig['donchian_high']:.0f}, ADX {sig['adx']:.1f}, ATR {sig['atr']:.1f}, 買入: {'🟢 YES' if sig['signal_buy'] else '⚪ NO'}")
+          else:
+              print(f"  ⚠️ 無法載入 {PARAMS_FILE}.json, 用 DEFAULT_PARAMS")
+
           from backtest import run_backtest
           backtest_result = run_backtest(objs, params, bars_per_year=1750)  # 1h K 1750 bars/year
           m = backtest_result.metrics
@@ -185,7 +212,8 @@ jobs:
           mdd = m.maxDrawdown
           n_trades = m.totalTrades
           pf = m.profitFactor
-          print(f"  ✓ Backtest: WR {wr*100:.1f}% / AR {ar*100:+.1f}% / MDD {mdd*100:.1f}% / PF {pf:.2f} / {n_trades} 筆")
+          sharpe = m.sharpe
+          print(f"  ✓ Backtest: WR {wr*100:.1f}% / AR {ar*100:+.1f}% / MDD {mdd*100:.1f}% / PF {pf:.2f} / Sharpe {sharpe:.2f} / {n_trades} 筆")
 
           # TRIPLE-PASS 達標狀態 (用戶目標: 勝率≥80% / 年化≥10% / MDD≤15%)
           wr_ok = wr >= 0.80
@@ -196,6 +224,7 @@ jobs:
 
           metrics_line = f"📊 配置回測 (14 個月 1h K): 勝率 {wr*100:.1f}% / 年化 {ar*100:+.1f}% / MDD {mdd*100:.1f}% / {n_trades} 筆"
           target_line = f"🎯 TRIPLE-PASS 目標: 勝率≥80% {'✅' if wr_ok else '❌'} / 年化≥10% {'✅' if ar_ok else '❌'} / MDD≤15% {'✅' if mdd_ok else '❌'} → {'✅ 達標' if triple_pass else '❌ 未達標'}"
+          config_name_line = f"📁 配置: {PARAMS_FILE}.json (D{p.donchianPeriod}/ADX{p.adxThreshold}/SL{p.atrStopMult}/TP{p.atrProfitMult})"
 
           # ============== 6. 組 Telegram 訊息 ==============
           if sig['signal_buy']:
@@ -229,6 +258,7 @@ jobs:
               f"{emoji} HSI 動量突破 [1h] - {title}\n"
               f"📅 {sig['date']} | HSI {sig['close']:,.0f}\n\n"
               f"{conditions}{trade_plan}\n\n"
+              f"{config_name_line}\n"
               f"⚙️ D{p.donchianPeriod} / ADX{p.adxThreshold} / SL{p.atrStopMult} / TP{p.atrProfitMult} / Risk{int(p.riskPerTrade*100)}%\n"
               f"{metrics_line}\n"
               f"{target_line}"
