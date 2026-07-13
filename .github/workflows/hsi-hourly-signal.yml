@@ -55,9 +55,11 @@ jobs:
               req = urllib.request.Request(url, data=data, headers=headers, method=method)
               try:
                   with urllib.request.urlopen(req, timeout=15) as resp:
-                      return resp.status, json.loads(resp.read().decode("utf-8"))
+                      body = resp.read().decode("utf-8")
+                      return resp.status, json.loads(body) if body.strip() else {}
               except urllib.error.HTTPError as e:
-                  return e.code, json.loads(e.read().decode("utf-8") or "{}")
+                  err_body = e.read().decode("utf-8")
+                  return e.code, json.loads(err_body) if err_body.strip() else {"message": str(e)}
 
           def push_to_repo(path, content_bytes, commit_msg):
               import base64
@@ -87,17 +89,15 @@ jobs:
                           "close": float(row['Close'].values[0]) if hasattr(row['Close'], 'values') else float(row['Close']),
                           "volume": float(row['Volume'].values[0]) if hasattr(row['Volume'], 'values') else float(row['Volume']),
                       })
-                  print(f"  ✓ yfinance {len(bars)} 根")
-                  content = json.dumps(bars, ensure_ascii=False).encode("utf-8")
-                  # 不推 1h K 回 repo (避免 yfinance 60 天限制覆蓋用戶本地 14 個月 1h K)
-                  print(f"  ✓ 1h K 拉成功 {len(bars)} 根 (不推 repo, 用本地 14 個月數據計算信號)")
+                  print(f"  ✓ yfinance {len(bars)} 根 (僅診斷用, 不用於計算信號)")
           except Exception as e:
               print(f"  ⚠️ yfinance 失敗: {e}")
 
-          if not bars:
-              print("  用本地 data/hsi_1h.json")
-              with open("data/hsi_1h.json", "r") as f:
-                  bars = json.load(f)
+          # 總是用本地 14 個月 1h K 計算信號 (yfinance 60 天會誤判趨勢)
+          print(f"  → 用本地 data/hsi_1h.json 計算信號 (14 個月)")
+          with open("data/hsi_1h.json", "r") as f:
+              bars = json.load(f)
+          print(f"  ✓ 本地 1h K {len(bars)} 根, 末根 {bars[-1]['date']} close={bars[-1]['close']:.0f}")
 
           # 2. 計算信號
           print("\n=== 計算信號 ===")
