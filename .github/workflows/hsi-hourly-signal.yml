@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       params_file:
-        description: "Params file (default 8111314 = 1h K 14 個月達標)"
+        description: "Params file (default TRIPLE-PASS-1H = 1h K 14 個月 TRIPLE-PASS 達標)"
         required: false
         type: string
-        default: "8111314"
+        default: "TRIPLE-PASS-1H"
   repository_dispatch:
     types: [hsi-hourly-signal]
   # schedule 暫時關閉, 等用戶設定 cron-job.org 後再加
@@ -38,6 +38,8 @@ jobs:
       - name: Update 1h K (yfinance 60d + merge history) + signal
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # workflow_dispatch 的 input.params_file 會自動設為 env
+          # repository_dispatch 沒 input, 需要在 dispatch client_payload.params_file 傳入 (下方會讀取)
         run: |
           python3 << 'PYEOF'
           import os
@@ -52,10 +54,21 @@ jobs:
           BRANCH = "main"
           GH_TOKEN = os.environ["GITHUB_TOKEN"]
           DATA_PATH = "data/hsi_1h.json"
-          # 讀取 params_file input (workflow_dispatch) 或 env (cron-job.org)
-          PARAMS_FILE = os.environ.get("PARAMS_FILE", "8111314")  # 預設 1h K 14 個月達標配置
-          # 註: repository_dispatch 不帶 input, 走默認 8111314
-          # 預設值也可以由 client_payload.params_file 覆寫 (下方會處理)
+          # 讀取 params_file
+          # 優先順序: GITHUB_EVENT 內的 client_payload > workflow_dispatch input > 默認
+          PARAMS_FILE = "TRIPLE-PASS-1H"  # 默認 1h K 14 個月 TRIPLE-PASS 達標配置
+          try:
+              with open(os.environ["GITHUB_EVENT_PATH"]) as f:
+                  event = json.load(f)
+              # repository_dispatch 的 client_payload
+              if event.get("client_payload", {}).get("params_file"):
+                  PARAMS_FILE = event["client_payload"]["params_file"]
+              # workflow_dispatch 的 inputs
+              elif event.get("inputs", {}).get("params_file"):
+                  PARAMS_FILE = event["inputs"]["params_file"]
+          except Exception as e:
+              print(f"⚠️ 無法讀 GITHUB_EVENT, 用默認 {PARAMS_FILE}: {e}")
+          print(f"使用 params file: {PARAMS_FILE}.json")
 
           def api(path, method="GET", body=None):
               url = f"https://api.github.com{path}"
