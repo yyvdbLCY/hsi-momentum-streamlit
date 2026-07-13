@@ -204,7 +204,7 @@ jobs:
               trade_plan = ""
 
           msg = (
-              f"{emoji} HSI 動量突破 - {title}\n"
+              f"{emoji} HSI 動量突破 [1h] - {title}\n"
               f"📅 {sig['date']} | HSI {sig['close']:,.0f}\n\n"
               f"{conditions}{trade_plan}\n\n"
               f"⚙️ D{p.donchianPeriod} / ADX{p.adxThreshold} / SL{p.atrStopMult} / TP{p.atrProfitMult} / Risk{int(p.riskPerTrade*100)}%"
