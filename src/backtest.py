@@ -687,17 +687,26 @@ def optimize_parameters(bars: list, max_combinations: int = 20000, preserve: dic
 # ============== Data Loading ==============
 
 def load_bars(filepath: str) -> list:
-    """Load HSI bars from JSON file"""
+    """Load HSI bars from JSON file. 統一 date 格式為 ISO (避免混合格式導致 pd.to_datetime 報錯)"""
     with open(filepath, 'r') as f:
         data = json.load(f)
-    return [OHLCBar(
-        date=b['date'],
-        open=b['open'],
-        high=b['high'],
-        low=b['low'],
-        close=b['close'],
-        volume=b.get('volume', 0),
-    ) for b in data]
+    result = []
+    for b in data:
+        d = b['date']
+        # 統一為 '%Y-%m-%d %H:%M:%S' 格式
+        # 本地舊數據: "2024-07-10 09:30" (沒秒)
+        # yfinance 新數據: "2026-04-15 09:30:00" (有秒)
+        if len(d) == 16:  # "2024-07-10 09:30"
+            d = d + ":00"
+        result.append(OHLCBar(
+            date=d,
+            open=b['open'],
+            high=b['high'],
+            low=b['low'],
+            close=b['close'],
+            volume=b.get('volume', 0),
+        ))
+    return result
 
 
 # ============== Latest Signal Check ==============

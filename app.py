@@ -330,7 +330,9 @@ with tab_backtest:
         ])
 
         eq_df = pd.DataFrame([{'date': p.date, 'equity': p.equity, 'drawdown': p.drawdown} for p in result.equity_curve])
-        eq_df['date'] = pd.to_datetime(eq_df['date'])
+        # 用 format='mixed' + errors='coerce' 避免混合格式拋錯
+        eq_df['date'] = pd.to_datetime(eq_df['date'], format='mixed', errors='coerce')
+        eq_df = eq_df.dropna(subset=['date'])  # 過濾掉無法解析的
 
         # Sub-tab 1: 權益曲線
         with subtab1:
@@ -349,9 +351,11 @@ with tab_backtest:
         # Sub-tab 3: 價格+通道
         with subtab3:
             bar_df = pd.DataFrame([{'date': b.date, 'open': b.open, 'high': b.high, 'low': b.low, 'close': b.close, 'volume': b.volume} for b in bars])
-            bar_df['date'] = pd.to_datetime(bar_df['date'])
+            bar_df['date'] = pd.to_datetime(bar_df['date'], format='mixed', errors='coerce')
+            bar_df = bar_df.dropna(subset=['date'])
             ind_df = pd.DataFrame([{'date': p.date, 'donchianHigh': p.donchianHigh, 'donchianLow': p.donchianLow, 'atr': p.atr, 'adx': p.adx} for p in result.indicator_series])
-            ind_df['date'] = pd.to_datetime(ind_df['date'])
+            ind_df['date'] = pd.to_datetime(ind_df['date'], format='mixed', errors='coerce')
+            ind_df = ind_df.dropna(subset=['date'])
 
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.7, 0.3])
             fig.add_trace(go.Candlestick(x=bar_df['date'], open=bar_df['open'], high=bar_df['high'], low=bar_df['low'], close=bar_df['close'], name='HSI'), row=1, col=1)
