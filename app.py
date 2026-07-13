@@ -509,16 +509,16 @@ with tab_monitor:
                 else:
                     st.error(f"❌ {r.get('error', '失敗')}")
         with col_u2:
-            if st.button("⏱️ 更新 1h K", use_container_width=True, key="update_1h_btn"):
-                with st.spinner("yfinance 拉取中 (重試 3 次, 約 1 分鐘)..."):
+            if st.button("⏱️ 更新 1h K (GitHub Actions)", use_container_width=True, key="update_1h_btn"):
+                with st.spinner("觸發 GitHub Actions workflow (拉 yfinance 60 天 + 合併歷史)..."):
                     r = update_hsi_1h()
                 if r.get("ok"):
-                    st.success(f"✅ {r['bars']} 筆, 最後 {r.get('last_date', '?')}")
-                    st.info("💡 重新整理頁面讀取新數據")
+                    st.success(f"✅ {r.get('message', '觸發成功')}")
+                    st.info(f"💡 {r.get('note', '1-2 分鐘後刷新頁面讀新數據')}")
                 else:
                     st.error(f"❌ {r.get('error', '失敗')}")
-                    st.caption("💡 yfinance rate limit 時請明天再試, 或接受用日 K 跑 backtest")
-        st.caption("更新後 `data/hsi.json` 跟 `data/hsi_1h.json` 會推送到 GitHub repo")
+                    st.caption("💡 Streamlit Cloud 上 yfinance 會被 rate limit, 改用 GitHub Actions 跑 (IP 不受限)")
+        st.caption("日 K 走 AkShare (本地拉), 1h K 走 GitHub Actions yfinance (不 rate limit)")
 
     if data_source == "tiger":
         st.warning("""

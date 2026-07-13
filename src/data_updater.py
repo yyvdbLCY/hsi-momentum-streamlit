@@ -160,12 +160,27 @@ def update_hsi_daily(token: str = "") -> dict:
 
 
 def update_hsi_1h(token: str = "") -> dict:
-    """完整流程: yfinance 拉 1h K → 推 GitHub → 返回結果"""
-    bars = fetch_hsi_1h_yfinance()
-    if not bars:
-        return {"ok": False, "error": "yfinance 拉 1h 數據失敗 (rate limit?)"}
-    last_date = bars[-1]['date']
-    msg = f"chore: 更新 HSI 1h K ({len(bars)} 筆, 最後更新: {last_date})"
-    r = push_to_repo("hsi_1h.json", bars, msg, token)
-    r['last_date'] = last_date
-    return r
+    """完整流程: trigger hsi-hourly-signal workflow → yfinance 拉 + 合併 + 推 repo
+
+    Streamlit Cloud 環境 yfinance 會被 rate limit,
+    改用 GitHub Actions 跑 (IP 不被限), 拉 60 天 1h K 跟現有 14 個月合併去重
+    """
+    if not token:
+        token = _get_token()
+    if not token:
+        return {"ok": False, "error": "GITHUB_PAT 未設定"}
+
+    code, resp = _api(
+        f"/repos/{REPO}/dispatches",
+        method="POST",
+        token=token,
+        body={"event_type": "hsi-hourly-signal", "client_payload": {}},
+    )
+    if code == 204:
+        return {
+            "ok": True,
+            "action": "trigger_workflow",
+            "message": "已觸發 hsi-hourly-signal workflow (GitHub Actions 拉 yfinance 60 天 + 合併 + 推 repo)",
+            "note": "1-2 分鐘後查看 Actions log 確認完成, 數據會自動同步到 Streamlit app",
+        }
+    return {"ok": False, "error": f"HTTP {code}: {resp.get('message', 'unknown')}"}
