@@ -327,14 +327,14 @@ with tab_backtest:
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=eq_df['date'], y=eq_df['equity'], mode='lines', name='權益', line=dict(color='#10b981', width=2)))
             fig.update_layout(title="權益曲線", xaxis_title="日期", yaxis_title="資金 (HKD)", height=400, template="plotly_white")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key=f"equity_{len(eq_df)}")
 
         # Sub-tab 2: 回撤
         with subtab2:
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=eq_df['date'], y=eq_df['drawdown']*100, mode='lines', name='回撤', fill='tozeroy', line=dict(color='#ef4444', width=1)))
             fig.update_layout(title="回撤曲線", xaxis_title="日期", yaxis_title="回撤 %", height=400, template="plotly_white")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key=f"drawdown_{len(eq_df)}")
 
         # Sub-tab 3: 價格+通道
         with subtab3:
@@ -350,7 +350,7 @@ with tab_backtest:
             fig.add_trace(go.Scatter(x=ind_df['date'], y=ind_df['adx'], mode='lines', name='ADX', line=dict(color='#8b5cf6', width=1)), row=2, col=1)
             fig.add_hline(y=st.session_state.params['adxThreshold'], line_dash="dash", line_color="red", row=2, col=1)
             fig.update_layout(title="價格 + Donchian 通道 + ADX", height=600, template="plotly_white", xaxis_rangeslider_visible=False)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key=f"price_ch_{len(bar_df)}_{st.session_state.params['donchianPeriod']}")
 
         # Sub-tab 4: 買賣點
         with subtab4:
@@ -365,7 +365,7 @@ with tab_backtest:
                 colors = ['#3b82f6' if t.exitReason == 'profit' else '#ef4444' if t.exitReason == 'stop' else '#f59e0b' if t.exitReason == 'trail' else '#8b5cf6' for t in result.trades]
                 fig.add_trace(go.Scatter(x=exit_dates, y=exit_prices, mode='markers', name='賣出', marker=dict(symbol='x', size=8, color=colors)))
             fig.update_layout(title="買賣點 (綠=買, 藍=止盈, 紅=止損, 橙=追蹤)", height=500, template="plotly_white", xaxis_rangeslider_visible=False)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key=f"trades_{len(result.trades)}")
 
         # Sub-tab 5: 月度報酬
         with subtab5:
@@ -377,7 +377,7 @@ with tab_backtest:
             colors = ['#10b981' if r > 0 else '#ef4444' for r in monthly['return']]
             fig.add_trace(go.Bar(x=monthly['month'], y=monthly['return']*100, marker_color=colors, name='月度報酬'))
             fig.update_layout(title="月度報酬 %", xaxis_title="月份", yaxis_title="報酬 %", height=400, template="plotly_white")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key=f"monthly_{len(monthly)}")
             st.dataframe(monthly[['month', 'start_eq', 'end_eq', 'return']].assign(**{'月度報酬%': lambda d: d['return'].apply(lambda x: f"{x*100:+.2f}%")}).drop(columns=['return']), use_container_width=True, height=300)
 
         # Sub-tab 6: 交易明細
